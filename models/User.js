@@ -1,3 +1,6 @@
+// User model for the CookMate application
+// Defines the User table structure with authentication and role management
+
 import { DataTypes } from "sequelize";
 import sequelize from "../config/database.js";
 
