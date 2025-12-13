@@ -1,42 +1,40 @@
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
 import { generateToken } from "../util/jwt.js";
+import AppError from "../util/AppError.js";
 
 /**
+ * ============================
  * LOGIN CONTROLLER
+ * ============================
  */
-export const login = async (req, res) => {
+export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Validate input
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
-    }
-
-    // 2. Find user by email
+    // 1. Find user
     const user = await User.findOne({ where: { email } });
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      throw new AppError("Invalid email or password", 401);
     }
 
-    // 3. Compare password
+    // 2. Compare password
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      throw new AppError("Invalid email or password", 401);
     }
 
-    // 4. Generate JWT
+    // 3. Generate JWT
     const token = generateToken({
       id: user.id,
       email: user.email,
       role: user.role,
     });
 
-    // 5. Send response
-    return res.json({
+    // 4. Success response
+    res.json({
       message: "Login successful",
       token,
       user: {
@@ -47,43 +45,41 @@ export const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Login Error:", error);
-    return res.status(500).json({ message: "Server error" });
+    next(error);
   }
 };
 
-/** * REGISTER CONTROLLER
+/**
+ * ============================
+ * REGISTER CONTROLLER
+ * ============================
  */
-export const register = async (req, res) => {
+export const register = async (req, res, next) => {
   try {
     const { name, email, password, role } = req.body;
 
-    // 1. Validate required fields
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "All fields are required." });
-    }
-
-    // 2. Check if email already exists
+    // 1. Check duplicate email
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ message: "Email already registered." });
+      throw new AppError("Email already registered", 409);
     }
 
-    // 3. If registering an admin → ensure no admin exists
+    // 2. Enforce single admin rule
     if (role === "admin") {
       const adminExists = await User.findOne({ where: { role: "admin" } });
 
       if (adminExists) {
-        return res.status(403).json({
-          message: "Admin account already exists. Only one admin allowed.",
-        });
+        throw new AppError(
+          "Admin account already exists. Only one admin allowed.",
+          403
+        );
       }
     }
 
-    // 4. Hash password
+    // 3. Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 5. Create user
+    // 4. Create user
     const newUser = await User.create({
       name,
       email,
@@ -91,15 +87,15 @@ export const register = async (req, res) => {
       role: role || "user",
     });
 
-    // Generate JWT for the new user
+    // 5. Generate JWT
     const token = generateToken({
       id: newUser.id,
       email: newUser.email,
       role: newUser.role,
     });
 
-    // 6. Send response
-    return res.status(201).json({
+    // 6. Success response
+    res.status(201).json({
       message: "User registered successfully",
       token,
       user: {
@@ -110,7 +106,6 @@ export const register = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Register Error:", error);
-    return res.status(500).json({ message: "Server error" });
+    next(error);
   }
 };

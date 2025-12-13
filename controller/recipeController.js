@@ -1,131 +1,195 @@
+import sequelize from "../config/database.js";
 import Recipe from "../models/Recipe.js";
 import RecipeIngredient from "../models/RecipeIngredient.js";
 import RecipeStep from "../models/RecipeStep.js";
 import Ingredient from "../models/Ingredient.js";
+import AppError from "../util/AppError.js";
 
 /**
- * ADMIN: Create recipe with ingredients & steps
+ * ============================
+ * ADMIN: Create recipe
+ * ============================
  */
-export const createRecipe = async (req, res) => {
+export const createRecipe = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+
   try {
     const { title, description, cook_time_minutes, ingredients, steps } =
       req.body;
 
-    if (!title || !cook_time_minutes || !ingredients || !steps) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
+    /**
+     * Validate ingredient references
+     */
+    const ingredientIds = ingredients.map((i) => i.ingredient_id);
 
-    // 1. Create recipe
-    const recipe = await Recipe.create({
-      title,
-      description,
-      cook_time_minutes,
-      created_by: req.user.id,
+    const existingIngredients = await Ingredient.findAll({
+      where: { id: ingredientIds },
+      attributes: ["id"],
     });
 
-    // 2. Save ingredients
+    const existingIds = existingIngredients.map((i) => i.id);
+
+    const missingIds = ingredientIds.filter((id) => !existingIds.includes(id));
+
+    if (missingIds.length > 0) {
+      throw new AppError("Some ingredients do not exist", 400, {
+        missingIngredientIds: missingIds,
+      });
+    }
+
+    /**
+     * Create recipe
+     */
+    const recipe = await Recipe.create(
+      {
+        title,
+        description,
+        cook_time_minutes,
+        created_by: req.user.id,
+      },
+      { transaction }
+    );
+
+    /**
+     * Create recipe ingredients
+     */
     for (const item of ingredients) {
-      await RecipeIngredient.create({
-        recipe_id: recipe.id,
-        ingredient_id: item.ingredient_id,
-        quantity: item.quantity,
-        unit: item.unit,
-        optional_flag: item.optional_flag || false,
-      });
+      await RecipeIngredient.create(
+        {
+          recipe_id: recipe.id,
+          ingredient_id: item.ingredient_id,
+          quantity: item.quantity,
+          unit: item.unit,
+          optional_flag: item.optional_flag || false,
+        },
+        { transaction }
+      );
     }
 
-    // 3. Save steps
+    /**
+     * Create recipe steps
+     */
     for (let i = 0; i < steps.length; i++) {
-      await RecipeStep.create({
-        recipe_id: recipe.id,
-        step_number: i + 1,
-        instruction: steps[i],
-      });
+      await RecipeStep.create(
+        {
+          recipe_id: recipe.id,
+          step_number: i + 1,
+          instruction: steps[i],
+        },
+        { transaction }
+      );
     }
 
-    return res.status(201).json({
+    await transaction.commit();
+
+    res.status(201).json({
       message: "Recipe created successfully",
       recipe_id: recipe.id,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    await transaction.rollback();
+    next(error);
   }
 };
 
 /**
- * PUBLIC: Get all recipes (basic list)
+ * ============================
+ * PUBLIC: Get all recipes
+ * ============================
  */
-export const getAllRecipes = async (req, res) => {
-  const recipes = await Recipe.findAll({
-    attributes: ["id", "title", "description", "cook_time_minutes"],
-    order: [["createdAt", "DESC"]],
-  });
+export const getAllRecipes = async (req, res, next) => {
+  try {
+    const recipes = await Recipe.findAll({
+      attributes: ["id", "title", "description", "cook_time_minutes"],
+      order: [["createdAt", "DESC"]],
+    });
 
-  res.json(recipes);
+    res.json(recipes);
+  } catch (error) {
+    next(error);
+  }
 };
 
 /**
- * PUBLIC: Get single recipe with ingredients & steps
+ * ============================
+ * PUBLIC: Get recipe by ID
+ * ============================
  */
-export const getRecipeById = async (req, res) => {
-  const { id } = req.params;
+export const getRecipeById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
 
-  const recipe = await Recipe.findByPk(id, {
-    include: [
-      {
-        model: RecipeIngredient,
-        include: [{ model: Ingredient }],
-      },
-      {
-        model: RecipeStep,
-        order: [["step_number", "ASC"]],
-      },
-    ],
-  });
+    const recipe = await Recipe.findByPk(id, {
+      include: [
+        {
+          model: RecipeIngredient,
+          include: [{ model: Ingredient }],
+        },
+        {
+          model: RecipeStep,
+          separate: true,
+          order: [["step_number", "ASC"]],
+        },
+      ],
+    });
 
-  if (!recipe) {
-    return res.status(404).json({ message: "Recipe not found" });
+    if (!recipe) {
+      throw new AppError("Recipe not found", 404);
+    }
+
+    res.json(recipe);
+  } catch (error) {
+    next(error);
   }
-
-  res.json(recipe);
 };
 
 /**
- * ADMIN: Update recipe (title, description, time only)
+ * ============================
+ * ADMIN: Update recipe
+ * ============================
  */
-export const updateRecipe = async (req, res) => {
-  const { id } = req.params;
-  const { title, description, cook_time_minutes } = req.body;
+export const updateRecipe = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { title, description, cook_time_minutes } = req.body;
 
-  const recipe = await Recipe.findByPk(id);
-  if (!recipe) {
-    return res.status(404).json({ message: "Recipe not found" });
+    const recipe = await Recipe.findByPk(id);
+    if (!recipe) {
+      throw new AppError("Recipe not found", 404);
+    }
+
+    recipe.title = title ?? recipe.title;
+    recipe.description = description ?? recipe.description;
+    recipe.cook_time_minutes = cook_time_minutes ?? recipe.cook_time_minutes;
+
+    await recipe.save();
+
+    res.json({ message: "Recipe updated successfully" });
+  } catch (error) {
+    next(error);
   }
-
-  recipe.title = title ?? recipe.title;
-  recipe.description = description ?? recipe.description;
-  recipe.cook_time_minutes = cook_time_minutes ?? recipe.cook_time_minutes;
-
-  await recipe.save();
-
-  res.json({ message: "Recipe updated successfully" });
 };
 
 /**
- * ADMIN: Delete recipe (cascade deletes ingredients & steps)
+ * ============================
+ * ADMIN: Delete recipe
+ * ============================
  */
-export const deleteRecipe = async (req, res) => {
-  const { id } = req.params;
+export const deleteRecipe = async (req, res, next) => {
+  try {
+    const { id } = req.params;
 
-  const recipe = await Recipe.findByPk(id);
-  if (!recipe) {
-    return res.status(404).json({ message: "Recipe not found" });
+    const recipe = await Recipe.findByPk(id);
+    if (!recipe) {
+      throw new AppError("Recipe not found", 404);
+    }
+
+    await RecipeIngredient.destroy({ where: { recipe_id: id } });
+    await RecipeStep.destroy({ where: { recipe_id: id } });
+    await recipe.destroy();
+
+    res.json({ message: "Recipe deleted successfully" });
+  } catch (error) {
+    next(error);
   }
-
-  await RecipeIngredient.destroy({ where: { recipe_id: id } });
-  await RecipeStep.destroy({ where: { recipe_id: id } });
-  await recipe.destroy();
-
-  res.json({ message: "Recipe deleted successfully" });
 };
