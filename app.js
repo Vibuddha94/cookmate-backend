@@ -1,6 +1,7 @@
 import express from "express";
 import sequelize from "./config/database.js";
 import authRoutes from "./routes/auth.js";
+import ingredientRoutes from "./routes/ingredients.js";
 
 import "./models/User.js";
 
@@ -15,5 +16,8 @@ sequelize
 
 //Auth Routes
 app.use("/api/auth", authRoutes);
+
+// Ingredient Routes
+app.use("/api/ingredients", ingredientRoutes);
 
 export default app;
