@@ -6,12 +6,16 @@ import authRoutes from "./routes/auth.js";
 import ingredientRoutes from "./routes/ingredients.js";
 import recipeRoutes from "./routes/recipes.js";
 
-// Models (IMPORTANT: import all models)
+// Models
 import User from "./models/User.js";
 import Ingredient from "./models/Ingredient.js";
 import Recipe from "./models/Recipe.js";
 import RecipeIngredient from "./models/RecipeIngredient.js";
 import RecipeStep from "./models/RecipeStep.js";
+
+// Error handling
+import { errorMiddleware } from "./middleware/errorMiddleware.js";
+import AppError from "./util/AppError.js";
 
 const app = express();
 app.use(express.json());
@@ -34,7 +38,7 @@ RecipeIngredient.belongsTo(Ingredient, { foreignKey: "ingredient_id" });
 Recipe.hasMany(RecipeStep, { foreignKey: "recipe_id" });
 RecipeStep.belongsTo(Recipe, { foreignKey: "recipe_id" });
 
-// User ↔ Recipe (created_by)
+// User ↔ Recipe
 User.hasMany(Recipe, { foreignKey: "created_by" });
 Recipe.belongsTo(User, { foreignKey: "created_by" });
 
@@ -53,14 +57,24 @@ sequelize
  * Routes
  * ============================
  */
-
-// Auth Routes
 app.use("/api/auth", authRoutes);
-
-// Ingredient Routes
 app.use("/api/ingredients", ingredientRoutes);
-
-// Recipe Routes
 app.use("/api/recipes", recipeRoutes);
+
+/**
+ * ============================
+ * 404 Handler (NO ROUTE MATCHED)
+ * ============================
+ */
+app.use((req, res, next) => {
+  next(new AppError(`Route not found: ${req.originalUrl}`, 404));
+});
+
+/**
+ * ============================
+ * Global Error Handler (LAST)
+ * ============================
+ */
+app.use(errorMiddleware);
 
 export default app;
