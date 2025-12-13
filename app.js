@@ -5,6 +5,7 @@ import sequelize from "./config/database.js";
 import authRoutes from "./routes/auth.js";
 import ingredientRoutes from "./routes/ingredients.js";
 import recipeRoutes from "./routes/recipes.js";
+import pantryRoutes from "./routes/pantry.js";
 
 // Models
 import User from "./models/User.js";
@@ -12,6 +13,7 @@ import Ingredient from "./models/Ingredient.js";
 import Recipe from "./models/Recipe.js";
 import RecipeIngredient from "./models/RecipeIngredient.js";
 import RecipeStep from "./models/RecipeStep.js";
+import UserPantry from "./models/UserPantry.js";
 
 // Error handling
 import { errorMiddleware } from "./middleware/errorMiddleware.js";
@@ -42,6 +44,14 @@ RecipeStep.belongsTo(Recipe, { foreignKey: "recipe_id" });
 User.hasMany(Recipe, { foreignKey: "created_by" });
 Recipe.belongsTo(User, { foreignKey: "created_by" });
 
+// User ↔ Pantry
+User.hasMany(UserPantry, { foreignKey: "user_id" });
+UserPantry.belongsTo(User, { foreignKey: "user_id" });
+
+// Ingredient ↔ Pantry
+Ingredient.hasMany(UserPantry, { foreignKey: "ingredient_id" });
+UserPantry.belongsTo(Ingredient, { foreignKey: "ingredient_id" });
+
 /**
  * ============================
  * Database Sync
@@ -60,6 +70,7 @@ sequelize
 app.use("/api/auth", authRoutes);
 app.use("/api/ingredients", ingredientRoutes);
 app.use("/api/recipes", recipeRoutes);
+app.use("/api/pantry", pantryRoutes);
 
 /**
  * ============================
@@ -72,7 +83,7 @@ app.use((req, res, next) => {
 
 /**
  * ============================
- * Global Error Handler (LAST)
+ * Global Error Handler
  * ============================
  */
 app.use(errorMiddleware);
